@@ -193,10 +193,13 @@ class ttSpider(scrapy.Spider):
             for page in pageurls:
                 pageurl = response.urljoin(page)
                 print(pageurl)
+                if(pageurl in self.urlBeen):
+                    continue
                 print("each page in pageurls, dbitems is cate")
                 req = self.make_requests_from_url(pageurl).replace(callback=lambda response, dbitem=dbItem: self.parse(response,dbitem) )
 
                 req.meta["dbItem"] = dbItem
+                self.urlBeen.add(pageurl)
                 yield req
 
             #读取每个分页上的document
