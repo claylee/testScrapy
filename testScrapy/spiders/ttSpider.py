@@ -13,16 +13,26 @@ from scrapy.http import Request
 
 sys.path.append(os.path.abspath(""))
 print(os.path.abspath(""))
-from models import category
 from models import scItems
+from models import category,document,picfile
+from database import db_session
 
 cateItem = scItems.cateItem
+docItem = scItems.docItem
+fileItem = scItems.fileItem
 piccategory = category.piccategory
+picdocument = document.picdocument
 
 class ttSpider(scrapy.Spider):
 
     def __init__(self):
         self.urlBeen = set()
+        self.cateurls = self.getCateUrls()
+        self.docurls = self.getDocUrls()
+
+    cateurls = []
+    docurls = []
+    fileurls = []
 
     name = "tts"
     allowed_domains = ["http://situiba.com/1009/",
@@ -61,44 +71,49 @@ class ttSpider(scrapy.Spider):
                 print(a.extract())
                 item = cateItem()
                 item["picurl"] = a.xpath("@href").extract()[0]
-                item["pictitle"] = a.xpath("font/text()").extract()[0]
+                item["title"] = a.xpath("font/text()").extract()[0]
                 item["categoryurl"] = "http://situiba.com" + a.xpath("@href").extract()[0]
                 item["categoryname"] = a.xpath("font/text()").extract()[0]
                 print(item["picurl"])
                 print(item["categoryurl"])
                 print(item["categoryname"])
                 item["categoryno"] = a.xpath("@href").extract()[0]
+                item["tags"] = ""
                 itemlist.append(item)
                 #yield item
         return itemlist
 
-
-    def parse(self, response):
+    def parseDocument(self, response):
         hxs = HtmlXPathSelector(response)
         socket.setdefaulttimeout(self.timeout)
-        items = []
-        icnt = 0
-        print("---------------------------------------")
-        itemlist =  self.parseCategory(response)
-        for item in itemlist:
-            yield item
-        return
         urls = response.xpath('//a/@href').extract()
+        print("$$ start cateparse")
+        divSelects = response.xpath("//div[@id='body']/div")
+        itemlist=[]
+        for i in range(6):
+            div = divSelects[i]
+            #pprint(div.extract())
+            alinks = div.xpath("a")
+            print("--------------------------")
+            print(len(alinks))
+            print("--------------------------")
+            for a in div.xpath("a"):
+                print(a.extract())
+                item = cateItem()
+                item["picurl"] = a.xpath("@href").extract()[0]
+                item["title"] = a.xpath("font/text()").extract()[0]
+                item["categoryurl"] = "http://situiba.com" + a.xpath("@href").extract()[0]
+                item["categoryname"] = a.xpath("font/text()").extract()[0]
+                print(item["picurl"])
+                print(item["categoryurl"])
+                print(item["categoryname"])
+                item["categoryno"] = a.xpath("@href").extract()[0]
+                item["tags"] = ""
+                itemlist.append(item)
+                #yield item
+        return itemlist
 
-        validurls = []
-        for url in urls:
-            url = response.urljoin(url)
-            if url not in self.urlBeen:
-                #print "**** ... ", url
-                self.urlBeen.add(url)
-                validurls.append(url)
-                #print url
-
-        #for url in validurls:
-            #yield Request(url, callback=self.parse)
-        items.extend([self.make_requests_from_url(url).replace(callback=self.parse) for url in validurls])
-        relPath = 'frake'
-
+    def dowloadImage(self,response):
         for sel in response.xpath('//img[@src]'):
             #fname = str(time.time()) + "_" + str(uuid.uuid1())
             item = TestscrapyItem()
@@ -136,10 +151,99 @@ class ttSpider(scrapy.Spider):
                         urllib.urlretrieve(item["link"], path + "\\" + item["title"])
                     except(ExceptionType) as e:
                         print(e)
-            #item['resp'] = response
-            #yield item
-            #print item['title'], item['link']
-            #items.append(item)
-            #print items
-            #yield item
+
+    def getCateUrls(self):
+        urls = []
+        for c in db_session.query(piccategory).all():
+            urls.append(c)
+        return urls
+
+    def getDocUrls(self):
+        urls = []
+        for c in db_session.query(picdocument).all():
+            urls.append(c)
+            self.urlBeen.add(c.docpath)
+        return urls
+
+    def parse(self, response, dbItem=None):
+        hxs = HtmlXPathSelector(response)
+        socket.setdefaulttimeout(self.timeout)
+        items = []
+        icnt = 0
+        print("---------------------------------------")
+        resDbItem = "no meta"
+        if("dbItem" in response.meta):
+            resDbItem = response.meta["dbItem"]
+        print("resDbItem：",resDbItem)
+
+        if dbItem is None and len(self.cateurls) == 0:
+            yield from self.parseCategory(response)
+            #return
+        elif dbItem is None:
+            for cate in self.cateurls:
+                print(cate.categoryurl)
+                print("each cateurls dbitem is none")
+                yield self.make_requests_from_url(cate.categoryurl).replace(callback=lambda response, dbitem=cate: self.parse(response,dbitem))
+
+        if isinstance(dbItem, piccategory):
+            sel = response.xpath("//div[@class='lm']")[0]
+
+            #读取分页 urls
+            pageurls = sel.xpath(".//ul[contains(@class,'page')]/a/@href").extract()
+            for page in pageurls:
+                pageurl = response.urljoin(page)
+                print(pageurl)
+                print("each page in pageurls, dbitems is cate")
+                req = self.make_requests_from_url(pageurl).replace(callback=lambda response, dbitem=dbItem: self.parse(response,dbitem) )
+
+                req.meta["dbItem"] = dbItem
+                yield req
+
+            #读取每个分页上的document
+            docurls = sel.xpath(".//td[contains(@height,'')]")
+            for doc in docurls:
+                if(len(doc.xpath(".//a/text()").extract())==0):
+                    continue
+                strurl = doc.xpath(".//a/@href").extract()[0]
+                if(strurl in self.urlBeen):
+                    continue
+                doci = docItem()
+                doci["docname"] = doc.xpath(".//a/text()").extract()[0]
+                doci["title"] = doc.xpath(".//a/text()").extract()[0]
+                doci["docpath"] = doc.xpath(".//a/@href").extract()[0]
+                doci["docno"] = ""
+                doci["tags"] = doc.xpath(".//a/text()").extract()[0]
+                doci["pcateid"] = dbItem.pcateid
+                self.urlBeen.add(strurl)
+                yield doci
+
+        if dbItem is None:
+            for c in self.cateurls:
+                print("just print cate urls")
+                print(c.title,c.categoryname,c.categoryno,c.categoryurl)
+            #yield c
+            #yield page
+
+        return
+
+        urls = response.xpath('//a/@href').extract()
+
+
+        return
+        urls = response.xpath('//a/@href').extract()
+
+        validurls = []
+        for url in urls:
+            url = response.urljoin(url)
+            if url not in self.urlBeen:
+                #print "**** ... ", url
+                self.urlBeen.add(url)
+                validurls.append(url)
+                #print url
+
+        #for url in validurls:
+            #yield Request(url, callback=self.parse)
+        items.extend([self.make_requests_from_url(url).replace(callback=self.parse) for url in validurls])
+        relPath = 'frake'
+
         #return items

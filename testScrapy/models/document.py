@@ -6,13 +6,13 @@ from database import Base
 
 class picdocument(Base):
     __tablename__ = 'picdocument'
-    did = Column(Integer, primary_key=True)
-    pictitle = Column(String(80), unique=True)
-    cateid = Column(Integer)
+    pdocid = Column(Integer, primary_key=True)
+    pcateid = Column(Integer)
+    title = Column(String(80), unique=True)
 
     docno = Column(String(120))
     docname = Column(String(120))
-    docurl = Column(String(120))
+    docpath = Column(String(120))
     tags = Column(String(120))
 
     def __init__(self):

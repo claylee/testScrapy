@@ -6,14 +6,15 @@ from database import Base
 
 class picfile(Base):
     __tablename__ = 'picfile'
-    pid = Column(Integer, primary_key=True)
-    cateid = Column(Integer)
-    did = Column(Integer)
+    id = Column(Integer, primary_key=True)
+    #cateid = Column(Integer)
+    pdocid = Column(Integer)
     fileno = Column(Integer)
 
     pictitle = Column(String(120))
-    picurl = Column(String(120))
     md5code = Column(String(120))
+    picurl = Column(String(120))
+    fpath = Column(String(120))
     tags = Column(String(120))
 
     def __init__(self):
